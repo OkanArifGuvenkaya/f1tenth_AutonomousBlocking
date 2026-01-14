@@ -20,31 +20,47 @@ class SimpleStateMachine(Node):
         self.declare_parameter('max_raceline', 3)
         self.declare_parameter('switch_period_sec', 5.0)
         self.declare_parameter('publish_period_sec', 0.2)
+        self.declare_parameter('raceline_mode', 1)  # 0=fixed, 1=cycling
+        self.declare_parameter('fixed_raceline_id', 2)
 
         self.selected_topic = self.get_parameter('selected_topic').get_parameter_value().string_value
         self.max_raceline = int(self.get_parameter('max_raceline').get_parameter_value().integer_value)
         self.switch_period = float(self.get_parameter('switch_period_sec').get_parameter_value().double_value)
         self.publish_period = float(self.get_parameter('publish_period_sec').get_parameter_value().double_value)
+        self.raceline_mode = int(self.get_parameter('raceline_mode').get_parameter_value().integer_value)
+        self.fixed_raceline_id = int(self.get_parameter('fixed_raceline_id').get_parameter_value().integer_value)
 
         self.pub = self.create_publisher(Int32, self.selected_topic, 10)
 
-        self.current = 1
+        # Set initial raceline based on mode
+        if self.raceline_mode == 0:
+            self.current = self.fixed_raceline_id
+        else:
+            self.current = 1
         
-        # Timer to switch raceline every switch_period seconds
-        self.switch_timer = self.create_timer(self.switch_period, self.switch_raceline_cb)
+        # Timer to switch raceline every switch_period seconds (only in cycling mode)
+        if self.raceline_mode == 1:
+            self.switch_timer = self.create_timer(self.switch_period, self.switch_raceline_cb)
         
         # Timer to publish current raceline every publish_period seconds
         self.publish_timer = self.create_timer(self.publish_period, self.publish_raceline_cb)
         
-        self.get_logger().info(
-            f'SimpleStateMachine: switching raceline every {self.switch_period}s, '
-            f'publishing to {self.selected_topic} every {self.publish_period}s (1..{self.max_raceline})'
-        )
+        if self.raceline_mode == 0:
+            self.get_logger().info(
+                f'SimpleStateMachine [FIXED MODE]: Using raceline {self.fixed_raceline_id} only, '
+                f'publishing to {self.selected_topic} every {self.publish_period}s'
+            )
+        else:
+            self.get_logger().info(
+                f'SimpleStateMachine [CYCLING MODE]: switching raceline every {self.switch_period}s, '
+                f'publishing to {self.selected_topic} every {self.publish_period}s (1..{self.max_raceline})'
+            )
 
     def switch_raceline_cb(self):
-        """Switch to next raceline every switch_period seconds"""
-        self.current = (self.current % self.max_raceline) + 1
-        self.get_logger().info(f'🔄 Raceline CHANGED → raceline={self.current}')
+        """Switch to next raceline every switch_period seconds (only in cycling mode)"""
+        if self.raceline_mode == 1:
+            self.current = (self.current % self.max_raceline) + 1
+            self.get_logger().info(f'🔄 Raceline CHANGED → raceline={self.current}')
 
     def publish_raceline_cb(self):
         """Publish current raceline every publish_period seconds"""
