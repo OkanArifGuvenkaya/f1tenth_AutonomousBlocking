@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+ENV/
+
+# YOLO training outputs
+runs/
+
+# YOLO model files (çok büyük)
+*.pt
+!perception/models/best.pt  # Sadece deployment model'i
+
+# Video outputs
+*.avi
+*.mp4
+
+# Keep specific files
+!runs/detect/mini_test_gpu/weights/best.pt
+
+# Dataset (çok büyük - sadece struktur)
+dataset/images/
+dataset/labels/
+
+# ROS2 build artifacts
+build/
+install/
+log/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
