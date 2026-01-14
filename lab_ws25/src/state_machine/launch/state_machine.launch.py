@@ -17,7 +17,7 @@ def generate_launch_description():
     # Declare launch arguments
     max_raceline_arg = DeclareLaunchArgument(
         'max_raceline',
-        default_value='5',
+        default_value='3',
         description='Maximum number of racelines available'
     )
     

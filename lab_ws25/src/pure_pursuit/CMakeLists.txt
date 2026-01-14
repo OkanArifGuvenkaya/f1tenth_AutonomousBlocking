@@ -13,6 +13,7 @@ endif()
 # Find dependencies
 foreach(PACKAGE 
   ament_cmake 
+  ament_index_cpp
   rclcpp
   rclpy
   geometry_msgs
@@ -41,13 +42,13 @@ include_directories(
 add_executable(pure_pursuit_node src/pure_pursuit_node.cpp)
 
 ament_target_dependencies(pure_pursuit_node 
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs visualization_msgs tf2_ros tf2 eigen3_cmake_module Eigen3
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs visualization_msgs tf2_ros tf2 eigen3_cmake_module Eigen3 ament_index_cpp
 )
 
 add_executable(waypoint_visualiser_node src/waypoint_visualiser_node.cpp)
 
 ament_target_dependencies(waypoint_visualiser_node 
-  rclcpp geometry_msgs std_msgs visualization_msgs eigen3_cmake_module Eigen3
+  rclcpp geometry_msgs std_msgs visualization_msgs eigen3_cmake_module Eigen3 ament_index_cpp
 )
 
 # Install Cpp executables
@@ -57,8 +58,9 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME})
 
   
-# Install launch files and config
+# Install launch files, config, and racelines
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY racelines DESTINATION share/${PROJECT_NAME})
 
 ament_package()

@@ -9,10 +9,13 @@
 #include <iostream>
 #include <fstream>
 #include <functional>
+#include <map>
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/int32.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 //other macros
 #define _USE_MATH_DEFINES
@@ -27,17 +30,34 @@ class WaypointVisualiser : public rclcpp::Node {
 public:
     WaypointVisualiser() : Node("waypoint_visualiser_node")
     {
-        this->declare_parameter("waypoints_path", "/sim_ws/src/pure_pursuit/racelines/e7_floor5.csv");
+        this->declare_parameter("racelines_dir", "racelines/");
+        this->declare_parameter("max_raceline", 3);
         this->declare_parameter("rviz_waypoints_topic", "/waypoints");
 
-        waypoints_path = this->get_parameter("waypoints_path").as_string();
+        std::string racelines_dir = this->get_parameter("racelines_dir").as_string();
+        max_raceline = this->get_parameter("max_raceline").as_int();
         rviz_waypoints_topic = this->get_parameter("rviz_waypoints_topic").as_string();
+        
+        // Make racelines_dir absolute if relative
+        if (racelines_dir[0] != '/') {
+            std::string package_share_dir = ament_index_cpp::get_package_share_directory("pure_pursuit");
+            racelines_dir = package_share_dir + "/" + racelines_dir;
+        }
+        
+        this->racelines_dir_ = racelines_dir;
+        current_raceline_id_ = 1;
 
         vis_path_pub = this->create_publisher<visualization_msgs::msg::MarkerArray>(rviz_waypoints_topic, 1000);
-        timer_ = this->create_wall_timer(2000ms, std::bind(&WaypointVisualiser::timer_callback, this));
+        
+        // Subscribe to state machine
+        raceline_sub = this->create_subscription<std_msgs::msg::Int32>(
+            "/selected_raceline", 10,
+            std::bind(&WaypointVisualiser::raceline_callback, this, _1));
+        
+        timer_ = this->create_wall_timer(500ms, std::bind(&WaypointVisualiser::timer_callback, this));
 
-        RCLCPP_INFO (this->get_logger(), "this node has been launched");
-        download_waypoints();
+        RCLCPP_INFO(this->get_logger(), "this node has been launched");
+        load_all_racelines();
 
     }
 
@@ -49,90 +69,127 @@ public:
 
 
     //topic names
-    std::string waypoints_path;
+    std::string racelines_dir_;
     std::string rviz_waypoints_topic;
+    int max_raceline;
+    int current_raceline_id_;
     
-    //file object
-    std::fstream csvFile_waypoints; 
-
     //struct initialisation
-    csvFileData waypoints;
+    std::map<int, csvFileData> all_racelines;
 
     //Publisher initialisation
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr vis_path_pub; 
+    
+    //Subscriber
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr raceline_sub;
 
     //Timer initialisation
     rclcpp::TimerBase::SharedPtr timer_;
 
     //private functions
     
-    void download_waypoints () { //put all data in vectors
-        csvFile_waypoints.open(waypoints_path, std::ios::in);
-
-        RCLCPP_INFO (this->get_logger(), "%s", (csvFile_waypoints.is_open() ? "fileOpened" : "fileNOTopened"));
+    void load_all_racelines() {
+        RCLCPP_INFO(this->get_logger(), "Loading all racelines from: %s", racelines_dir_.c_str());
         
-        //std::vector<std::string> row;
-        std::string line, word, temp;
-
-        while (!csvFile_waypoints.eof()) { //TODO: use eof to find end of file (if this doesn't work)
+        for (int i = 1; i <= max_raceline; i++) {
+            std::string raceline_path = racelines_dir_ + "raceline_" + std::to_string(i) + ".csv";
+            csvFileData raceline_data;
             
-            //row.clear(); //empty row extraction string vector
-
-            std::getline(csvFile_waypoints, line, '\n');
-            //RCLCPP_INFO (this->get_logger(), "%s", line);
-
-
-            std::stringstream s(line); //TODO: continue implementation
-
-            int j = 0;
-            while (getline(s, word, ',')) {
-
-                RCLCPP_INFO (this->get_logger(), "%s", (word.empty() ? "wordempty" : "wordNOTempty"));
-                //RCLCPP_INFO (this->get_logger(), "%f", std::stod(word));
-                if (!word.empty()) {
-                    if (j == 0) {
-                        double x = std::stod(word);
-                        waypoints.X.push_back(x);
-                        RCLCPP_INFO (this->get_logger(), "%f... Xpoint", waypoints.X.back());
+            std::fstream csvFile;
+            csvFile.open(raceline_path, std::ios::in);
+            
+            if (!csvFile.is_open()) {
+                RCLCPP_ERROR(this->get_logger(), "Cannot Open CSV File: %s", raceline_path.c_str());
+                continue;
+            }
+            
+            std::string line, word;
+            while (std::getline(csvFile, line)) {
+                if (line.empty()) continue;
+                
+                std::stringstream s(line);
+                int j = 0;
+                while (std::getline(s, word, ',')) {
+                    if (!word.empty()) {
+                        if (j == 0) {
+                            raceline_data.X.push_back(std::stod(word));
+                        } else if (j == 1) {
+                            raceline_data.Y.push_back(std::stod(word));
+                        }
                     }
-                    
-                    if (j == 1) {
-                        waypoints.Y.push_back(std::stod(word));
-                        RCLCPP_INFO (this->get_logger(), "%f... Ypoint", waypoints.Y.back());
-                    }
+                    j++;
                 }
-
-                j++;
+            }
+            
+            csvFile.close();
+            
+            if (raceline_data.X.size() > 0) {
+                all_racelines[i] = raceline_data;
+                RCLCPP_INFO(this->get_logger(), "✓ Loaded raceline_%d with %zu waypoints", i, raceline_data.X.size());
             }
         }
-
-        csvFile_waypoints.close();
+    }
+    
+    void raceline_callback(const std_msgs::msg::Int32::SharedPtr msg) {
+        current_raceline_id_ = msg->data;
     }
 
     void visualize_points() {
         auto marker_array = visualization_msgs::msg::MarkerArray();
-        auto marker = visualization_msgs::msg::Marker();
-        marker.header.frame_id = "map";
-        marker.header.stamp = rclcpp::Clock().now();
-        marker.type = visualization_msgs::msg::Marker::SPHERE;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.scale.x = 0.15;
-        marker.scale.y = 0.15;
-        marker.scale.z = 0.15;
-        marker.color.a = 1.0; 
-        marker.color.g = 1.0;
-
-        for(unsigned int i=0; i<waypoints.X.size(); ++i) {
-            marker.pose.position.x = waypoints.X[i];
-            marker.pose.position.y = waypoints.Y[i];
-            marker.id = i;
+        
+        // Visualize all racelines with different colors
+        for (const auto& [id, raceline] : all_racelines) {
+            auto marker = visualization_msgs::msg::Marker();
+            marker.header.frame_id = "map";
+            marker.header.stamp = this->get_clock()->now();
+            marker.ns = "raceline_" + std::to_string(id);
+            marker.id = id;
+            marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.pose.orientation.w = 1.0;
+            
+            // If this is the selected raceline, make it thicker and brighter
+            if (id == current_raceline_id_) {
+                marker.scale.x = 0.15;  // Thick line
+                marker.color.r = 1.0;
+                marker.color.g = 1.0;
+                marker.color.b = 0.0;   // Yellow
+                marker.color.a = 1.0;   // Fully visible
+            } else {
+                marker.scale.x = 0.05;  // Thin line
+                // Different color for each raceline
+                if (id == 1) {
+                    marker.color.r = 0.0;
+                    marker.color.g = 0.5;
+                    marker.color.b = 1.0;  // Light blue
+                } else if (id == 2) {
+                    marker.color.r = 1.0;
+                    marker.color.g = 0.0;
+                    marker.color.b = 0.5;  // Pink
+                } else if (id == 3) {
+                    marker.color.r = 0.0;
+                    marker.color.g = 1.0;
+                    marker.color.b = 0.5;  // Light green
+                }
+                marker.color.a = 0.4;  // Semi-transparent
+            }
+            
+            // Add all waypoints to the line strip
+            for (size_t i = 0; i < raceline.X.size(); ++i) {
+                geometry_msgs::msg::Point p;
+                p.x = raceline.X[i];
+                p.y = raceline.Y[i];
+                p.z = 0.0;
+                marker.points.push_back(p);
+            }
+            
             marker_array.markers.push_back(marker);
         }
 
         vis_path_pub->publish(marker_array);
     }
 
-    void timer_callback () {
+    void timer_callback() {
         visualize_points();
     }
     

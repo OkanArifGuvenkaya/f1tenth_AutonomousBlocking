@@ -17,7 +17,7 @@ class SimpleStateMachine(Node):
 
         # parameters
         self.declare_parameter('selected_topic', '/selected_raceline')
-        self.declare_parameter('max_raceline', 5)
+        self.declare_parameter('max_raceline', 3)
         self.declare_parameter('switch_period_sec', 5.0)
         self.declare_parameter('publish_period_sec', 0.2)
 

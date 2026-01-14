@@ -1,6 +1,7 @@
 pure_pursuit_node:
   ros__parameters:
-    waypoints_path: "/sim_ws/src/pure_pursuit/racelines/raceline_3.csv" 
+    racelines_dir: "/sim_ws/src/pure_pursuit/racelines/"
+    max_raceline: 3
     odom_topic: "/ego_racecar/odom"
     car_refFrame: "ego_racecar/base_link"
     global_refFrame: "map"
@@ -16,4 +17,4 @@ pure_pursuit_node:
 
 waypoint_visualiser_node:
   ros__parameters:
-    waypoints_path: "/sim_ws/src/pure_pursuit/racelines/raceline_3.csv 
+    racelines_dir: "/sim_ws/src/pure_pursuit/racelines/" 

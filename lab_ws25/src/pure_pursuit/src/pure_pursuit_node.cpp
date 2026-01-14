@@ -18,6 +18,8 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include "std_msgs/msg/int32.hpp"
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 
 #define _USE_MATH_DEFINES
@@ -29,7 +31,8 @@ class PurePursuit : public rclcpp::Node {
 public:
     PurePursuit() : Node("pure_pursuit_node") {
         // initialise parameters
-        this->declare_parameter("waypoints_path", "/sim_ws/src/pure_pursuit/racelines/e7_floor5.csv");
+        this->declare_parameter("racelines_dir", "/sim_ws/src/pure_pursuit/racelines/");
+        this->declare_parameter("max_raceline", 3);
         this->declare_parameter("odom_topic", "/ego_racecar/odom");
         this->declare_parameter("car_refFrame", "ego_racecar/base_link");
         this->declare_parameter("drive_topic", "/drive");
@@ -43,7 +46,16 @@ public:
         this->declare_parameter("velocity_percentage", 0.6);
         
         // Default Values
-        waypoints_path = this->get_parameter("waypoints_path").as_string();
+        racelines_dir = this->get_parameter("racelines_dir").as_string();
+        
+        // If racelines_dir is relative, make it absolute using package share directory
+        if (racelines_dir[0] != '/') {
+            std::string package_share_dir = ament_index_cpp::get_package_share_directory("pure_pursuit");
+            racelines_dir = package_share_dir + "/" + racelines_dir;
+        }
+        
+        max_raceline = this->get_parameter("max_raceline").as_int();
+        current_raceline_id = 1;  // Start with raceline 1
         odom_topic = this->get_parameter("odom_topic").as_string();
         car_refFrame = this->get_parameter("car_refFrame").as_string();
         drive_topic = this->get_parameter("drive_topic").as_string();
@@ -58,7 +70,9 @@ public:
         
         //initialise subscriber sharedptr obj
         subscription_odom = this->create_subscription<nav_msgs::msg::Odometry>(odom_topic, 25, std::bind(&PurePursuit::odom_callback, this, _1));
+        subscription_raceline = this->create_subscription<std_msgs::msg::Int32>("/selected_raceline", 10, std::bind(&PurePursuit::raceline_callback, this, _1));
         timer_ = this->create_wall_timer(2000ms, std::bind(&PurePursuit::timer_callback, this));
+        raceline_print_timer_ = this->create_wall_timer(200ms, std::bind(&PurePursuit::print_current_raceline, this));
 
         //initialise publisher sharedptr obj
         publisher_drive = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(drive_topic, 25);
@@ -71,7 +85,8 @@ public:
 
         RCLCPP_INFO (this->get_logger(), "this node has been launched");
 
-        download_waypoints();
+        load_all_racelines();
+        switch_raceline(current_raceline_id);
 
     }
 
@@ -103,7 +118,9 @@ private:
     std::string drive_topic;
     std::string global_refFrame;
     std::string rviz_waypointselected_topic;
-    std::string waypoints_path;
+    std::string racelines_dir;
+    int max_raceline;
+    int current_raceline_id;
     double K_p;
     double min_lookahead;
     double max_lookahead;
@@ -121,13 +138,16 @@ private:
 
     //struct initialisation
     csvFileData waypoints;
+    std::map<int, csvFileData> all_racelines;  // Store all racelines
     int num_waypoints;
 
     //Timer initialisation
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr raceline_print_timer_;
 
     //declare subscriber sharedpointer obj
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscription_odom;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr subscription_raceline;
 
     //declare publisher sharedpointer obj
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr publisher_drive; 
@@ -155,50 +175,188 @@ private:
         return dist;
     }
 
-    void download_waypoints () { //put all data in vectors
-        csvFile_waypoints.open(waypoints_path, std::ios::in);
-
-        if (!csvFile_waypoints.is_open()) {
-            RCLCPP_ERROR(this->get_logger(), "Cannot Open CSV File: %s", waypoints_path);
-            return;
-        } else {
-            RCLCPP_INFO(this->get_logger(), "CSV File Opened");
-
-        }
-
+    void load_all_racelines() {
+        RCLCPP_INFO(this->get_logger(), "Loading all racelines from: %s", racelines_dir.c_str());
         
-        //std::vector<std::string> row;
-        std::string line, word, temp;
-
-        while (!csvFile_waypoints.eof()) {
-            std::getline(csvFile_waypoints, line, '\n');
-            std::stringstream s(line); 
-
-            int j = 0;
-            while (getline(s, word, ',')) {
-                if (!word.empty()) {
-                    if (j == 0) {
-                        waypoints.X.push_back(std::stod(word));
-                    } else if (j == 1) {
-                        waypoints.Y.push_back(std::stod(word));
-                    } else if (j == 2) {
-                        waypoints.V.push_back(std::stod(word));
+        for (int i = 1; i <= max_raceline; i++) {
+            std::string raceline_path = racelines_dir + "raceline_" + std::to_string(i) + ".csv";
+            csvFileData raceline_data;
+            raceline_data.index = 0;
+            raceline_data.velocity_index = 0;
+            
+            std::fstream csvFile;
+            csvFile.open(raceline_path, std::ios::in);
+            
+            if (!csvFile.is_open()) {
+                RCLCPP_ERROR(this->get_logger(), "Cannot Open CSV File: %s", raceline_path.c_str());
+                continue;
+            }
+            
+            std::string line, word;
+            int line_count = 0;
+            while (std::getline(csvFile, line)) {
+                if (line.empty()) continue;
+                
+                std::stringstream s(line);
+                int j = 0;
+                while (std::getline(s, word, ',')) {
+                    if (!word.empty()) {
+                        try {
+                            if (j == 0) {
+                                raceline_data.X.push_back(std::stod(word));
+                            } else if (j == 1) {
+                                raceline_data.Y.push_back(std::stod(word));
+                            } else if (j == 2) {
+                                raceline_data.V.push_back(std::stod(word));
+                            }
+                        } catch (const std::exception& e) {
+                            RCLCPP_WARN(this->get_logger(), "Error parsing line %d in raceline_%d: %s", line_count, i, e.what());
+                        }
                     }
+                    j++;
                 }
-                j++;
+                line_count++;
+            }
+            
+            csvFile.close();
+            
+            if (raceline_data.X.size() > 0) {
+                all_racelines[i] = raceline_data;
+                RCLCPP_INFO(this->get_logger(), "✓ Loaded raceline_%d with %zu waypoints", i, raceline_data.X.size());
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "✗ Failed to load raceline_%d - no data parsed", i);
             }
         }
-
-        csvFile_waypoints.close();
-        num_waypoints = waypoints.X.size();
-        RCLCPP_INFO(this->get_logger(), "Finished loading %d waypoints from %d", num_waypoints, waypoints_path);
         
-        double average_dist_between_waypoints = 0.0;
-        for (int i=0;i<num_waypoints-1;i++) {
-            average_dist_between_waypoints += p2pdist(waypoints.X[i], waypoints.X[i+1], waypoints.Y[i], waypoints.Y[i+1]);
+        RCLCPP_INFO(this->get_logger(), "All racelines loaded successfully! Total: %zu racelines", all_racelines.size());
+    }
+
+    void find_nearest_forward_waypoint() {
+        if (waypoints.X.empty()) return;
+        
+        int best_index = 0;
+        double best_score = std::numeric_limits<double>::max();
+        bool found = false;
+        
+        // Get vehicle heading
+        double vehicle_heading = atan2(2.0 * (odom_quat.z * odom_quat.w + odom_quat.x * odom_quat.y), 
+                                      1.0 - 2.0 * (odom_quat.y * odom_quat.y + odom_quat.z * odom_quat.z));
+        
+        // Target distance: prefer waypoints around min_lookahead distance
+        double target_dist = min_lookahead;
+        
+        // Find waypoint that is:
+        // 1. In front of the car
+        // 2. Aligned with car's heading direction
+        // 3. Around lookahead distance away (not too close, not too far)
+        for (int i = 0; i < num_waypoints; i++) {
+            double dx = waypoints.X[i] - x_car_world;
+            double dy = waypoints.Y[i] - y_car_world;
+            
+            // Transform to car's local frame
+            double local_x = dx * cos(-vehicle_heading) - dy * sin(-vehicle_heading);
+            double local_y = dx * sin(-vehicle_heading) + dy * cos(-vehicle_heading);
+            
+            // Only consider waypoints in FRONT (local_x > 0) and not too far to the side
+            if (local_x > 0 && abs(local_y) < 3.0) {  // Within 3m laterally
+                double dist = sqrt(dx*dx + dy*dy);
+                
+                // Calculate waypoint direction relative to car
+                double waypoint_angle = atan2(dy, dx);
+                double angle_diff = abs(waypoint_angle - vehicle_heading);
+                // Normalize angle difference to [0, PI]
+                while (angle_diff > M_PI) angle_diff -= 2*M_PI;
+                angle_diff = abs(angle_diff);
+                
+                // Score: combination of distance error and angle alignment
+                // Prefer waypoints that are:
+                // - Around target_dist away (not too close)
+                // - Well aligned with car's heading
+                double dist_error = abs(dist - target_dist);
+                double score = dist_error + 2.0 * angle_diff;  // Angle is more important
+                
+                if (score < best_score && dist > 0.5) {  // Minimum 0.5m away
+                    best_score = score;
+                    best_index = i;
+                    found = true;
+                }
+            }
         }
-        average_dist_between_waypoints /= num_waypoints;
-        RCLCPP_INFO(this->get_logger(), "Average distance between waypoints: %f", average_dist_between_waypoints);
+        
+        // If no good waypoint found, use nearest forward waypoint
+        if (!found) {
+            RCLCPP_WARN(this->get_logger(), "⚠️  No optimal waypoint found! Using nearest forward.");
+            double min_dist = std::numeric_limits<double>::max();
+            for (int i = 0; i < num_waypoints; i++) {
+                double dx = waypoints.X[i] - x_car_world;
+                double dy = waypoints.Y[i] - y_car_world;
+                double local_x = dx * cos(-vehicle_heading) - dy * sin(-vehicle_heading);
+                
+                if (local_x > 0) {
+                    double dist = sqrt(dx*dx + dy*dy);
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        best_index = i;
+                        found = true;
+                    }
+                }
+            }
+        }
+        
+        // Last resort: use absolute nearest
+        if (!found) {
+            RCLCPP_WARN(this->get_logger(), "⚠️  No forward waypoint! Using absolute nearest.");
+            double min_dist = std::numeric_limits<double>::max();
+            for (int i = 0; i < num_waypoints; i++) {
+                double dx = waypoints.X[i] - x_car_world;
+                double dy = waypoints.Y[i] - y_car_world;
+                double dist = sqrt(dx*dx + dy*dy);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    best_index = i;
+                }
+            }
+        }
+        
+        waypoints.index = best_index;
+        double final_dx = waypoints.X[best_index] - x_car_world;
+        double final_dy = waypoints.Y[best_index] - y_car_world;
+        double final_dist = sqrt(final_dx*final_dx + final_dy*final_dy);
+        RCLCPP_INFO(this->get_logger(), "📍 Selected waypoint index %d (dist: %.2fm, score: %.2f)", 
+                    best_index, final_dist, best_score);
+    }
+
+    void switch_raceline(int raceline_id) {
+        if (all_racelines.find(raceline_id) == all_racelines.end()) {
+            RCLCPP_ERROR(this->get_logger(), "Raceline %d not found!", raceline_id);
+            return;
+        }
+        
+        current_raceline_id = raceline_id;
+        waypoints = all_racelines[raceline_id];
+        num_waypoints = waypoints.X.size();
+        
+        // Find nearest forward waypoint after switch
+        find_nearest_forward_waypoint();
+        
+        RCLCPP_INFO(this->get_logger(), "🔄 SWITCHED to raceline_%d (%d waypoints, starting at index %d)", 
+                    raceline_id, num_waypoints, waypoints.index);
+    }
+
+    void raceline_callback(const std_msgs::msg::Int32::SharedPtr msg) {
+        int new_raceline_id = msg->data;
+        
+        if (new_raceline_id != current_raceline_id && new_raceline_id >= 1 && new_raceline_id <= max_raceline) {
+            switch_raceline(new_raceline_id);
+        }
+    }
+
+    void print_current_raceline() {
+        RCLCPP_INFO(this->get_logger(), "📍 Following raceline_%d", current_raceline_id);
+    }
+    
+    void download_waypoints () { //put all data in vectors
+        // This function is deprecated - now using load_all_racelines() instead
     }
 
     void visualize_points(Eigen::Vector3d &point) {
