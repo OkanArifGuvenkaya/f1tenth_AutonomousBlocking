@@ -1,0 +1,20 @@
+# F1Tenth Opponent Detector Parameters
+# Configure these parameters for your specific setup
+
+opponent_detector:
+  ros__parameters:
+    # Model configuration
+    model_path: "models/best.pt"  # Relative path to perception package
+    confidence_threshold: 0.5  # Adjust based on your testing (0.0-1.0)
+    use_gpu: true  # Set to false if running on CPU
+    
+    # ROS Topics
+    camera_topic: "/camera/image_raw"  # Match with camera_publisher.py
+    detection_topic: "/opponent_detections"
+    visualization_topic: "/opponent_detections/visualization"
+    
+    # Visualization
+    publish_visualization: true  # Set to false to save bandwidth
+    
+    # Logging
+    log_frequency: 1.0  # Log detection info every N seconds

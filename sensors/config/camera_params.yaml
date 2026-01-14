@@ -1,0 +1,18 @@
+# F1Tenth Camera Configuration Parameters
+# Configure these parameters for your specific camera setup
+
+camera_publisher:
+  ros__parameters:
+    # ROS Topics
+    camera_topic: "/camera/image_raw"  # Output topic for camera images
+    frame_id: "camera"                 # Frame ID for TF
+    
+    # Camera Settings
+    publish_rate: 30.0                 # Publishing frequency in Hz
+    image_width: 1280                  # Desired image width
+    image_height: 720                  # Desired image height
+    
+    # Camera Detection Settings
+    camera_index_start: 0              # Start searching from this camera index
+    camera_index_end: 4                # End search at this camera index
+    min_camera_width: 1280             # Minimum width to identify ZED camera
