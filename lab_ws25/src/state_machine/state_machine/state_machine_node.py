@@ -86,6 +86,13 @@ class LaneBlockingNode(Node):
             if opponent_found: break
 
         if opponent_found:
+
+            self.get_logger().info(
+                f"Raw X: {bbox_center_x:.0f} | Center: {self.IMAGE_CENTER_X} | Width: {bbox_width_px:.0f}", 
+                throttle_duration_sec=0.5
+            )
+
+            
             self.last_detection_time = time.time()
 
             # --- STEP 1: PIXELS TO METERS ---
