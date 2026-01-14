@@ -78,6 +78,10 @@ def generate_launch_description():
         parameters=[config_file]  # ✅ Load config file
     )
     
+    # Note: keyboard_listener must be run in separate terminal for stdin access
+    # If using raceline_mode=2, run in another terminal:
+    #   ros2 run state_machine keyboard_listener
+    
     return LaunchDescription([
         use_config_arg,
         max_raceline_arg,

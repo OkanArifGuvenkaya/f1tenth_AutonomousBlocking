@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'safety_node = state_machine.safety_node:main',
-            'state_machine_node = state_machine.state_machine_node:main'
+            'state_machine_node = state_machine.state_machine_node:main',
+            'keyboard_listener = state_machine.keyboard_listener:main'
         ],
     },
 )
