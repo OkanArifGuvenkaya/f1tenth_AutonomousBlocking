@@ -1,69 +1,147 @@
 #!/usr/bin/env python3
-"""Simple state machine: publishes selected raceline id.
-
-This node cycles through raceline ids from 1..max_raceline every switch_period seconds,
-and publishes the current selected raceline every publish_period seconds on `/selected_raceline`.
-"""
-from typing import Optional
-
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import String
+from vision_msgs.msg import Detection2DArray
+import time
 
 
-class SimpleStateMachine(Node):
+class LaneBlockingNode(Node):
     def __init__(self):
-        super().__init__('simple_state_machine')
+        super().__init__('lane_blocking')
 
-        # parameters
-        self.declare_parameter('selected_topic', '/selected_raceline')
-        self.declare_parameter('max_raceline', 3)
-        self.declare_parameter('switch_period_sec', 5.0)
-        self.declare_parameter('publish_period_sec', 0.2)
+        # ==========================================
+        # 1. CONFIGURATION (Based on your data)
+        # ==========================================
+        self.IMAGE_WIDTH_PX = 1344.0  # Camera Resolution
+        self.IMAGE_CENTER_X = 672.0  # 1344 / 2
 
-        self.selected_topic = self.get_parameter('selected_topic').get_parameter_value().string_value
-        self.max_raceline = int(self.get_parameter('max_raceline').get_parameter_value().integer_value)
-        self.switch_period = float(self.get_parameter('switch_period_sec').get_parameter_value().double_value)
-        self.publish_period = float(self.get_parameter('publish_period_sec').get_parameter_value().double_value)
+        self.TRACK_WIDTH_M = 1.60  # 160 cm Track
+        self.REAL_CAR_WIDTH_M = 0.30  # 30 cm Car
 
-        self.pub = self.create_publisher(Int32, self.selected_topic, 10)
+        # Lane Math:
+        # 1.6m Track / 3 Lanes = ~0.53m per lane.
+        # The boundary between lanes is half that width (~0.26m).
+        self.LANE_BOUNDARY_M = (self.TRACK_WIDTH_M / 3.0) / 2.0
 
-        self.current = 1
-        
-        # Timer to switch raceline every switch_period seconds
-        self.switch_timer = self.create_timer(self.switch_period, self.switch_raceline_cb)
-        
-        # Timer to publish current raceline every publish_period seconds
-        self.publish_timer = self.create_timer(self.publish_period, self.publish_raceline_cb)
-        
-        self.get_logger().info(
-            f'SimpleStateMachine: switching raceline every {self.switch_period}s, '
-            f'publishing to {self.selected_topic} every {self.publish_period}s (1..{self.max_raceline})'
-        )
+        self.TIMEOUT_DURATION = 0.5
 
-    def switch_raceline_cb(self):
-        """Switch to next raceline every switch_period seconds"""
-        self.current = (self.current % self.max_raceline) + 1
-        self.get_logger().info(f'🔄 Raceline CHANGED → raceline={self.current}')
+        # Ordered list of lanes
+        self.LANE_ORDER = ["LEFT", "CENTER", "RIGHT"]
 
-    def publish_raceline_cb(self):
-        """Publish current raceline every publish_period seconds"""
-        msg = Int32()
-        msg.data = int(self.current)
-        self.pub.publish(msg)
-        self.get_logger().info(f'📍 Publishing current raceline={self.current}')
+        # ==========================================
+        # 2. STATE
+        # ==========================================
+        self.current_lane_index = 1  # Start assuming we are CENTER (Index 1)
+        self.target_lane_cmd = "CENTER"
+        self.last_detection_time = time.time()
+
+        # ==========================================
+        # 3. COMMUNICATION
+        # ==========================================
+
+        # INPUT: From Controller (Where am I?)
+        # Expects: "LEFT", "CENTER", or "RIGHT"
+        self.sub_controller = self.create_subscription(
+            String,
+            '/control/current_lane',
+            self.controller_callback,
+            10)
+
+        # INPUT: From Camera (Where are they?)
+        self.sub_perception = self.create_subscription(
+            Detection2DArray,
+            '/opponent_detections',
+            self.perception_callback,
+            10)
+
+        # OUTPUT: To Planner (Where to go)
+        self.pub_planning = self.create_publisher(
+            String,
+            '/planning/target_lane',
+            10)
+
+        self.timer = self.create_timer(0.1, self.watchdog_loop)
+
+        self.get_logger().info(f"Blocking Node Started. Boundary: +/- {self.LANE_BOUNDARY_M:.2f}m")
+
+    def controller_callback(self, msg):
+        """Update our knowledge of which lane we are currently following."""
+        if msg.data in self.LANE_ORDER:
+            self.current_lane_index = self.LANE_ORDER.index(msg.data)
+
+    def perception_callback(self, msg):
+        opponent_found = False
+        bbox_center_x = 0.0
+        bbox_width_px = 1.0
+
+        # 1. Find Opponent
+        for detection in msg.detections:
+            for result in detection.results:
+                if result.id == "opponent_car":
+                    bbox_center_x = detection.bbox.center.x
+                    bbox_width_px = detection.bbox.size_x
+                    opponent_found = True
+                    break
+            if opponent_found: break
+
+        if opponent_found:
+            self.last_detection_time = time.time()
+
+            # --- STEP 1: PIXELS TO METERS ---
+            pixel_offset = bbox_center_x - self.IMAGE_CENTER_X
+
+            # Safety check for width
+            if bbox_width_px < 1.0: bbox_width_px = 1.0
+
+            # "Scale Trick": Use the known car width (0.3m) to find real distance
+            # (Offset / Car_Px_Width) * Car_Real_Width
+            real_offset_m = (pixel_offset / bbox_width_px) * self.REAL_CAR_WIDTH_M
+
+            # --- STEP 2: DETERMINE SHIFT (Left/Straight/Right) ---
+            lane_shift = 0
+
+            if real_offset_m < -self.LANE_BOUNDARY_M:
+                lane_shift = -1  # They are on the LEFT
+                # self.get_logger().info("Detect: LEFT")
+
+            elif real_offset_m > self.LANE_BOUNDARY_M:
+                lane_shift = 1  # They are on the RIGHT
+                # self.get_logger().info("Detect: RIGHT")
+
+            else:
+                lane_shift = 0  # They are STRAIGHT (Center relative to us)
+                # self.get_logger().info("Detect: STRAIGHT")
+
+            # --- STEP 3: CALCULATE NEW TARGET ---
+            # Example: I am CENTER (1) + They are LEFT (-1) = Target LEFT (0)
+            target_index = self.current_lane_index + lane_shift
+
+            # Limit index to 0, 1, or 2
+            if target_index < 0: target_index = 0
+            if target_index > 2: target_index = 2
+
+            self.target_lane_cmd = self.LANE_ORDER[target_index]
+            self.publish_command()
+
+    def watchdog_loop(self):
+        # If no opponent seen for 0.5s, return to CENTER
+        if time.time() - self.last_detection_time > self.TIMEOUT_DURATION:
+            if self.target_lane_cmd != "CENTER":
+                self.target_lane_cmd = "CENTER"
+                self.publish_command()
+
+    def publish_command(self):
+        msg = String()
+        msg.data = self.target_lane_cmd
+        self.pub_planning.publish(msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = SimpleStateMachine()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    node = LaneBlockingNode()
+    rclpy.spin(node)
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
