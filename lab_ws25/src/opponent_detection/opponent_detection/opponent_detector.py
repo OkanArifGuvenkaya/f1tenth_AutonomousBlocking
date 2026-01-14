@@ -57,8 +57,8 @@ class OpponentYOLODetector(Node):
             self.get_logger().error('  config/opponent_detector_params.yaml')
             self.get_logger().error('')
             self.get_logger().error('Run the node with:')
-            self.get_logger().error('  ros2 run perception opponent_detector --ros-args --params-file config/opponent_detector_params.yaml')
-            self.get_logger().error('  OR use launch file: ros2 launch perception opponent_detector.launch.py')
+            self.get_logger().error('  ros2 run opponent_detection opponent_detector --ros-args --params-file config/opponent_detector_params.yaml')
+            self.get_logger().error('  OR use launch file: ros2 launch opponent_detection opponent_detector.launch.py')
             self.get_logger().error('=' * 60)
             raise RuntimeError(f'Missing required parameter: {str(e)}')
         
@@ -83,7 +83,7 @@ class OpponentYOLODetector(Node):
         # If model_path is relative, resolve it from package share directory
         if not os.path.isabs(model_path):
             try:
-                package_share_dir = get_package_share_directory('perception')
+                package_share_dir = get_package_share_directory('opponent_detection')
                 model_path = os.path.join(package_share_dir, model_path)
             except Exception as e:
                 self.get_logger().warn(
@@ -96,7 +96,7 @@ class OpponentYOLODetector(Node):
             self.get_logger().error('❌ MODEL FILE NOT FOUND!')
             self.get_logger().error('=' * 60)
             self.get_logger().error(f'Model path: {model_path}')
-            self.get_logger().error('Please ensure the model file exists in perception/models/')
+            self.get_logger().error('Please ensure the model file exists in opponent_detection/models/')
             self.get_logger().error('=' * 60)
             raise FileNotFoundError(f'Model file not found: {model_path}')
         
