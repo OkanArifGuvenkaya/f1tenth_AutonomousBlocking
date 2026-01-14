@@ -19,9 +19,9 @@ data/
 runs/
 weights/
 
-# Tüm .pt dosyaları ignore - ANCAK perception/models/ hariç
+# Tüm .pt dosyaları ignore - ANCAK opponent_detection/models/ hariç
 *.pt
-!perception/models/*.pt
+!lab_ws25/src/opponent_detection/models/*.pt
 
 # ====================
 # Python
