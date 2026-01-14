@@ -103,15 +103,15 @@ class LaneBlockingNode(Node):
 
             if real_offset_m < -self.LANE_BOUNDARY_M:
                 lane_shift = -1  # They are on the LEFT
-                # self.get_logger().info("Detect: LEFT")
+                self.get_logger().info("Detect: LEFT ({real_offset_m:.2}m)")
 
             elif real_offset_m > self.LANE_BOUNDARY_M:
                 lane_shift = 1  # They are on the RIGHT
-                # self.get_logger().info("Detect: RIGHT")
+                self.get_logger().info("Detect: RIGHT ({real_offset_m:.2}m)")
 
             else:
                 lane_shift = 0  # They are STRAIGHT (Center relative to us)
-                # self.get_logger().info("Detect: STRAIGHT")
+                self.get_logger().info("Detect: STRAIGHT ({real_offset_m:.2}m)")
 
             # --- STEP 3: CALCULATE NEW TARGET ---
             # Example: I am CENTER (1) + They are LEFT (-1) = Target LEFT (0)
