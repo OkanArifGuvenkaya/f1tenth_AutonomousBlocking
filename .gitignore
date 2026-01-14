@@ -1,48 +1,100 @@
+# ====================
+# Dataset & Data Files
+# ====================
+dataset/
+data/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# ====================
+# YOLO Model Files
+# ====================
+# Root dizindeki pretrained modeller
+/yolov8*.pt
+/yolo11*.pt
+
+# Training outputs
+runs/
+weights/
+
+# Tüm .pt dosyaları ignore - ANCAK perception/models/ hariç
+*.pt
+!perception/models/*.pt
+
+# ====================
 # Python
+# ====================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-*.egg-info/
-.venv/
+env/
 venv/
 ENV/
-
-# YOLO training outputs
-runs/
-
-# YOLO model files (çok büyük)
-*.pt
-!perception/models/best.pt  # Sadece deployment model'i
-
-# Video outputs
-*.avi
-*.mp4
-
-# Keep specific files
-!runs/detect/mini_test_gpu/weights/best.pt
-
-# Dataset (çok büyük - sadece struktur)
-dataset/images/
-dataset/labels/
-
-# ROS2 build artifacts
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ====================
+# ROS 2 / Colcon
+# ====================
 install/
 log/
+build/
+devel/
+*.bag
+*.db3
 
-# IDE
+# ====================
+# IDE & Editor Files
+# ====================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Temporary files
+# ====================
+# Jupyter Notebooks
+# ====================
+.ipynb_checkpoints
+*.ipynb
+
+# ====================
+# Environment Variables
+# ====================
+.env
+.venv
+*.env
+
+# ====================
+# Logs & Temp Files
+# ====================
+*.log
 *.tmp
+*.temp
+logs/
+
+# ====================
+# System Files
+# ====================
+Thumbs.db
+.DS_Store
 *.bak
