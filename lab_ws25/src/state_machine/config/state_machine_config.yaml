@@ -26,3 +26,9 @@ simple_state_machine:
     # Detection print interval in seconds (used when raceline_mode = 3)
     # Throttles printing to avoid console spam - only prints every N seconds
     detection_print_interval: 2.0
+    
+    # Detection height threshold for distance estimation (used when raceline_mode = 3)
+    # If bbox height > threshold: opponent is CLOSE
+    # If bbox height <= threshold: opponent is FAR
+    # Larger bbox height means the car appears bigger in image = closer to camera
+    detection_height_threshold: 100.0  # pixels

@@ -26,6 +26,7 @@ class SimpleStateMachine(Node):
         self.declare_parameter('keyboard_topic', '/keyboard_input')
         self.declare_parameter('opponent_detection_topic', '/opponent_detections')
         self.declare_parameter('detection_print_interval', 2.0)
+        self.declare_parameter('detection_height_threshold', 100.0)
 
         self.selected_topic = self.get_parameter('selected_topic').get_parameter_value().string_value
         self.max_raceline = int(self.get_parameter('max_raceline').get_parameter_value().integer_value)
@@ -36,6 +37,7 @@ class SimpleStateMachine(Node):
         self.keyboard_topic = self.get_parameter('keyboard_topic').get_parameter_value().string_value
         self.opponent_detection_topic = self.get_parameter('opponent_detection_topic').get_parameter_value().string_value
         self.detection_print_interval = float(self.get_parameter('detection_print_interval').get_parameter_value().double_value)
+        self.detection_height_threshold = float(self.get_parameter('detection_height_threshold').get_parameter_value().double_value)
 
         self.pub = self.create_publisher(Int32, self.selected_topic, 10)
         
@@ -100,6 +102,10 @@ class SimpleStateMachine(Node):
                 f'(Left: 0-{int(self.center_divider)}, Right: {int(self.center_divider)}-{self.image_width})'
             )
             self.get_logger().info(f'Detection print interval: {self.print_interval}s (throttled for readability)')
+            self.get_logger().info(
+                f'Distance estimation threshold: {self.detection_height_threshold} pixels '
+                f'(height > {self.detection_height_threshold}px = CLOSE, <= {self.detection_height_threshold}px = FAR)'
+            )
 
     def switch_raceline_cb(self):
         """Switch to next raceline every switch_period seconds (only in cycling mode)"""
@@ -219,10 +225,19 @@ class SimpleStateMachine(Node):
         x2 = center_x + width / 2
         y2 = center_y + height / 2
         
+        # Estimate distance based on bounding box height
+        if height > self.detection_height_threshold:
+            distance_estimate = "CLOSE 🔴"
+            distance_indicator = "⚠️ "
+        else:
+            distance_estimate = "FAR 🟢"
+            distance_indicator = "ℹ️  "
+        
         self.get_logger().info(f'   Detection {idx}:')
         self.get_logger().info(f'      Class: {class_id}')
         self.get_logger().info(f'      Confidence: {confidence:.2%}')
         self.get_logger().info(f'      Camera: {camera_side}')
+        self.get_logger().info(f'      {distance_indicator}Distance Estimate: {distance_estimate}')
         self.get_logger().info(f'      Bounding Box:')
         self.get_logger().info(f'         Center (Stereo): ({center_x:.1f}, {center_y:.1f}) pixels')
         self.get_logger().info(f'         Center (Single Camera): ({camera_x:.1f}, {center_y:.1f}) pixels')
