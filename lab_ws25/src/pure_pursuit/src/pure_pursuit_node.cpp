@@ -326,21 +326,112 @@ private:
                     best_index, final_dist, best_score);
     }
 
+    void find_nearest_waypoint_in_radius(double max_radius) {
+        if (waypoints.X.empty()) return;
+        
+        int best_index = 0;
+        double best_score = std::numeric_limits<double>::max();
+        bool found = false;
+        
+        // Get vehicle heading
+        double vehicle_heading = atan2(2.0 * (odom_quat.z * odom_quat.w + odom_quat.x * odom_quat.y), 
+                                      1.0 - 2.0 * (odom_quat.y * odom_quat.y + odom_quat.z * odom_quat.z));
+        
+        // Search ALL waypoints but only within max_radius (to avoid other side of oval track)
+        for (int i = 0; i < num_waypoints; i++) {
+            double dx = waypoints.X[i] - x_car_world;
+            double dy = waypoints.Y[i] - y_car_world;
+            double dist = sqrt(dx*dx + dy*dy);
+            
+            // Only consider waypoints within radius (avoid far side of track)
+            if (dist > max_radius) continue;
+            
+            // Transform to car's local frame
+            double local_x = dx * cos(-vehicle_heading) - dy * sin(-vehicle_heading);
+            double local_y = dx * sin(-vehicle_heading) + dy * cos(-vehicle_heading);
+            
+            // Calculate waypoint direction relative to car
+            double waypoint_angle = atan2(dy, dx);
+            double angle_diff = abs(waypoint_angle - vehicle_heading);
+            while (angle_diff > M_PI) angle_diff -= 2*M_PI;
+            angle_diff = abs(angle_diff);
+            
+            // Prioritize waypoints that are:
+            // 1. In front (local_x > 0)
+            // 2. Close to car
+            // 3. Aligned with heading
+            if (local_x > 0) {
+                double score = dist + 2.0 * angle_diff;  // Lower score is better
+                if (score < best_score) {
+                    best_score = score;
+                    best_index = i;
+                    found = true;
+                }
+            }
+        }
+        
+        // Fallback: if no forward waypoint found, just use nearest in radius
+        if (!found) {
+            RCLCPP_WARN(this->get_logger(), "⚠️  No forward waypoint in radius! Using nearest in radius.");
+            double min_dist = std::numeric_limits<double>::max();
+            for (int i = 0; i < num_waypoints; i++) {
+                double dx = waypoints.X[i] - x_car_world;
+                double dy = waypoints.Y[i] - y_car_world;
+                double dist = sqrt(dx*dx + dy*dy);
+                
+                if (dist <= max_radius && dist < min_dist) {
+                    min_dist = dist;
+                    best_index = i;
+                    found = true;
+                }
+            }
+        }
+        
+        // Last resort: just use absolute nearest (shouldn't happen)
+        if (!found) {
+            RCLCPP_ERROR(this->get_logger(), "❌ No waypoint in %.1fm radius! Using absolute nearest.", max_radius);
+            double min_dist = std::numeric_limits<double>::max();
+            for (int i = 0; i < num_waypoints; i++) {
+                double dx = waypoints.X[i] - x_car_world;
+                double dy = waypoints.Y[i] - y_car_world;
+                double dist = sqrt(dx*dx + dy*dy);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    best_index = i;
+                }
+            }
+        }
+        
+        waypoints.index = best_index;
+        double final_dx = waypoints.X[best_index] - x_car_world;
+        double final_dy = waypoints.Y[best_index] - y_car_world;
+        double final_dist = sqrt(final_dx*final_dx + final_dy*final_dy);
+        RCLCPP_INFO(this->get_logger(), "📍 Found waypoint index %d within %.1fm (dist: %.2fm, score: %.2f)", 
+                    best_index, max_radius, final_dist, best_score);
+    }
+
     void switch_raceline(int raceline_id) {
         if (all_racelines.find(raceline_id) == all_racelines.end()) {
             RCLCPP_ERROR(this->get_logger(), "Raceline %d not found!", raceline_id);
             return;
         }
         
+        // Store current position (X,Y) before switching
+        double current_x = x_car_world;
+        double current_y = y_car_world;
+        
         current_raceline_id = raceline_id;
         waypoints = all_racelines[raceline_id];
         num_waypoints = waypoints.X.size();
         
-        // Find nearest forward waypoint after switch
-        find_nearest_forward_waypoint();
+        // Find waypoint in new raceline that is:
+        // 1. Close to current position (within 8m radius - avoid other side of oval)
+        // 2. In front of car
+        // 3. Aligned with heading
+        find_nearest_waypoint_in_radius(8.0);  // 8m radius limit
         
-        RCLCPP_INFO(this->get_logger(), "🔄 SWITCHED to raceline_%d (%d waypoints, starting at index %d)", 
-                    raceline_id, num_waypoints, waypoints.index);
+        RCLCPP_INFO(this->get_logger(), "🔄 SWITCHED to raceline_%d at position (%.2f, %.2f) → waypoint index %d", 
+                    raceline_id, current_x, current_y, waypoints.index);
     }
 
     void raceline_callback(const std_msgs::msg::Int32::SharedPtr msg) {
@@ -381,8 +472,22 @@ private:
     void get_waypoint() {
     double longest_distance = 0;
     int final_i = -1;
-    // Set the search range for waypoints
-    int start = waypoints.index;
+    
+    // FIRST: Find the closest waypoint to start searching from
+    int closest_index = 0;
+    double closest_distance = 999999.0;
+    
+    // Search all waypoints to find the closest one
+    for (int i = 0; i < num_waypoints; i++) {
+        double dist = p2pdist(waypoints.X[i], x_car_world, waypoints.Y[i], y_car_world);
+        if (dist < closest_distance) {
+            closest_distance = dist;
+            closest_index = i;
+        }
+    }
+    
+    // Set the search range starting from closest waypoint
+    int start = closest_index;
     int end = (start + 500) % num_waypoints;
 
     double lookahead = std::min(std::max(min_lookahead, max_lookahead * curr_velocity / lookahead_ratio), max_lookahead); 
@@ -412,10 +517,8 @@ private:
 
     if (final_i != -1) {
         waypoints.index = final_i; 
-    } else if (final_i == -1 && longest_distance == 0) {
-        // This handles the case when no waypoint is found within the lookahead distance
-        waypoints.index = (waypoints.index + 1) % num_waypoints; // Move to the next waypoint
     }
+    // If no waypoint found, keep current index (don't auto-increment)
 
     // Find the closest point to the car, and use the velocity index for that
     double shortest_distance = p2pdist(waypoints.X[start], x_car_world, waypoints.Y[start], y_car_world);

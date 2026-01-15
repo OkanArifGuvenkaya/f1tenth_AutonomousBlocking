@@ -13,6 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),  # ✅ Install config
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'safety_node = state_machine.safety_node:main',
-            'state_machine_node = state_machine.state_machine_node:main'
+            'state_machine_node = state_machine.state_machine_node:main',
+            'keyboard_listener = state_machine.keyboard_listener:main'
         ],
     },
 )

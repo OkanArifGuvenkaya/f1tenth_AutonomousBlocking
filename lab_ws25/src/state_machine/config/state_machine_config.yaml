@@ -1,0 +1,18 @@
+simple_state_machine:
+  ros__parameters:
+    selected_topic: "/selected_raceline"
+    max_raceline: 3
+    switch_period_sec: 5.0
+    publish_period_sec: 0.2
+    
+    # Raceline Mode:
+    # 0 = Fixed mode: Use only fixed_raceline_id (no switching)
+    # 1 = Cycling mode: Switch between racelines every switch_period_sec
+    # 2 = Keyboard mode: Control with arrow keys (LEFT/RIGHT)
+    raceline_mode: 2
+    
+    # Fixed raceline ID (used when raceline_mode = 0)
+    fixed_raceline_id: 2
+    
+    # Keyboard input topic (used when raceline_mode = 2)
+    keyboard_topic: "/keyboard_input"
