@@ -26,6 +26,7 @@ class SimpleStateMachine(Node):
         self.declare_parameter('keyboard_topic', '/keyboard_input')
         self.declare_parameter('opponent_detection_topic', '/opponent_detections')
         self.declare_parameter('detection_print_interval', 2.0)
+        self.declare_parameter('raceline_change_frame_threshold', 10)
         self.declare_parameter('detection_height_threshold', 100.0)
         self.declare_parameter('detection_width_threshold_min', 224.0)
         self.declare_parameter('detection_width_threshold_max', 448.0)
@@ -39,6 +40,7 @@ class SimpleStateMachine(Node):
         self.keyboard_topic = self.get_parameter('keyboard_topic').get_parameter_value().string_value
         self.opponent_detection_topic = self.get_parameter('opponent_detection_topic').get_parameter_value().string_value
         self.detection_print_interval = float(self.get_parameter('detection_print_interval').get_parameter_value().double_value)
+        self.raceline_change_frame_threshold = int(self.get_parameter('raceline_change_frame_threshold').get_parameter_value().integer_value)
         self.detection_height_threshold = float(self.get_parameter('detection_height_threshold').get_parameter_value().double_value)
         self.detection_width_threshold_min = float(self.get_parameter('detection_width_threshold_min').get_parameter_value().double_value)
         self.detection_width_threshold_max = float(self.get_parameter('detection_width_threshold_max').get_parameter_value().double_value)
@@ -57,6 +59,10 @@ class SimpleStateMachine(Node):
                 Detection2DArray, self.opponent_detection_topic, self.opponent_detection_callback, 10
             )
             self.detection_count = 0  # Counter for received detections
+            
+            # Decision history buffer for frame threshold filtering
+            self.decision_history = []  # List of recent decisions
+            self.decision_buffer_max = self.raceline_change_frame_threshold
             
             # ZED camera stereo image parameters
             self.image_width = 1344  # Total width of stereo image
@@ -114,6 +120,10 @@ class SimpleStateMachine(Node):
                 f'Horizontal position thresholds: LEFT < {self.detection_width_threshold_min}px, '
                 f'CENTER {self.detection_width_threshold_min}-{self.detection_width_threshold_max}px, '
                 f'RIGHT > {self.detection_width_threshold_max}px'
+            )
+            self.get_logger().info(
+                f'Raceline change threshold: {self.raceline_change_frame_threshold} consecutive frames '
+                f'(noise filtering enabled)'
             )
 
     def switch_raceline_cb(self):
@@ -181,9 +191,20 @@ class SimpleStateMachine(Node):
         # Make decision based on detections from both cameras
         final_decision = self._make_decision(left_positions, right_positions)
         
-        # Update raceline based on decision (Mode 3 only)
+        # Add decision to history buffer
+        self.decision_history.append(final_decision)
+        
+        # Keep buffer size limited
+        if len(self.decision_history) > self.decision_buffer_max:
+            self.decision_history.pop(0)
+        
+        # Check if we should update raceline (requires threshold consecutive same decisions)
+        should_update, stable_decision = self._check_decision_stability()
+        
+        # Update raceline based on stable decision (Mode 3 only)
         previous_raceline = self.current
-        self._update_raceline_from_decision(final_decision)
+        if should_update:
+            self._update_raceline_from_decision(stable_decision)
         
         # Print header
         self.get_logger().info('=' * 80)
@@ -192,8 +213,14 @@ class SimpleStateMachine(Node):
         self.get_logger().info(f'   Frame ID: {msg.header.frame_id}')
         self.get_logger().info(f'   Total detections: {num_detections} (Left: {len(left_detections)}, Right: {len(right_detections)})')
         self.get_logger().info('')
-        self.get_logger().info(f'🎯 FINAL DECISION: {final_decision}')
-        self.get_logger().info(f'📍 RACELINE: {previous_raceline} → {self.current} {self._get_raceline_change_indicator(previous_raceline, self.current)}')
+        self.get_logger().info(f'🎯 CURRENT DECISION: {final_decision}')
+        self.get_logger().info(f'📊 DECISION BUFFER: {len(self.decision_history)}/{self.decision_buffer_max} frames')
+        if should_update:
+            self.get_logger().info(f'✅ STABLE DECISION: {stable_decision} (threshold reached)')
+            self.get_logger().info(f'📍 RACELINE: {previous_raceline} → {self.current} {self._get_raceline_change_indicator(previous_raceline, self.current)}')
+        else:
+            self.get_logger().info(f'⏳ WAITING FOR STABILITY: Need {self.raceline_change_frame_threshold - len(self.decision_history)} more frames')
+            self.get_logger().info(f'📍 RACELINE: {self.current} (unchanged)')
         self.get_logger().info('=' * 80)
         
         if num_detections == 0:
@@ -216,6 +243,40 @@ class SimpleStateMachine(Node):
                     self._print_detection_details(detection, idx, 'RIGHT')
         
         self.get_logger().info('=' * 80)
+    
+    def _check_decision_stability(self):
+        """Check if decision history is stable enough to trigger raceline change
+        
+        Returns:
+            tuple: (should_update: bool, stable_decision: str)
+                - should_update: True if threshold reached with consistent decision
+                - stable_decision: The stable decision string (or None if not stable)
+        
+        Logic:
+            - Requires exactly raceline_change_frame_threshold frames in buffer
+            - All frames must have the same decision direction (LEFT/RIGHT/CENTER/NO OPPONENT)
+            - Extracts decision direction by taking first word of decision string
+        """
+        # Need full buffer
+        if len(self.decision_history) < self.decision_buffer_max:
+            return False, None
+        
+        # Extract decision directions (first word: LEFT/RIGHT/CENTER/NO)
+        decision_directions = []
+        for decision in self.decision_history:
+            # Extract first word (LEFT, RIGHT, CENTER, or NO)
+            direction = decision.split()[0]
+            decision_directions.append(direction)
+        
+        # Check if all decisions are the same
+        first_decision = decision_directions[0]
+        all_same = all(d == first_decision for d in decision_directions)
+        
+        if all_same:
+            # Return the full decision string from the most recent frame
+            return True, self.decision_history[-1]
+        else:
+            return False, None
     
     def _update_raceline_from_decision(self, decision):
         """Update current raceline based on decision
@@ -247,6 +308,10 @@ class SimpleStateMachine(Node):
                 f'🔄 Raceline adjusted: {old_raceline} → {self.current} '
                 f'(Decision: {decision.split()[0]})'
             )
+            # Clear decision history buffer after raceline change
+            # This allows fresh evaluation in new raceline position
+            self.decision_history.clear()
+            self.get_logger().info(f'🔄 Decision buffer cleared for fresh evaluation')
     
     def _get_raceline_change_indicator(self, old_raceline, new_raceline):
         """Get emoji indicator for raceline change

@@ -32,6 +32,13 @@ simple_state_machine:
     # Throttles printing to avoid console spam - only prints every N seconds
     detection_print_interval: 2.0
     
+    # Raceline change frame threshold (used when raceline_mode = 3)
+    # Requires N consecutive frames with same decision before changing raceline
+    # Helps filter out noise and unstable detections during overtaking
+    # Higher value = more stable but slower response
+    # Lower value = faster response but more susceptible to noise
+    raceline_change_frame_threshold: 3  # frames (e.g., 10 frames = ~0.3s at 30fps)
+    
     # Detection height threshold for distance estimation (used when raceline_mode = 3)
     # If bbox height > threshold: opponent is CLOSE
     # If bbox height <= threshold: opponent is FAR
@@ -43,6 +50,6 @@ simple_state_machine:
     # If center_x < min: opponent is on LEFT side
     # If min <= center_x <= max: opponent is in CENTER
     # If center_x > max: opponent is on RIGHT side
-    detection_width_threshold_min: 224.0  # pixels (range 0-672)
-    detection_width_threshold_max: 448.0  # pixels (range detection_width_threshold_min-672)
+    detection_width_threshold_min: 234.0  # pixels (range 0-672)
+    detection_width_threshold_max: 438.0  # pixels (range detection_width_threshold_min-672)
 
