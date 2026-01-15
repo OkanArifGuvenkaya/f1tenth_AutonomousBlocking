@@ -157,6 +157,8 @@ class SimpleStateMachine(Node):
         # Separate detections by camera (left vs right)
         left_detections = []
         right_detections = []
+        left_positions = []  # Store horizontal positions for left camera
+        right_positions = []  # Store horizontal positions for right camera
         
         for detection in msg.detections:
             bbox = detection.bbox
@@ -165,8 +167,19 @@ class SimpleStateMachine(Node):
             # Determine which camera based on center X position
             if center_x < self.center_divider:
                 left_detections.append(detection)
+                # Calculate position for left camera
+                camera_x = center_x
+                position = self._get_horizontal_position(camera_x)
+                left_positions.append(position)
             else:
                 right_detections.append(detection)
+                # Calculate position for right camera
+                camera_x = center_x - self.center_divider
+                position = self._get_horizontal_position(camera_x)
+                right_positions.append(position)
+        
+        # Make decision based on detections from both cameras
+        final_decision = self._make_decision(left_positions, right_positions)
         
         # Print header
         self.get_logger().info('=' * 80)
@@ -174,6 +187,8 @@ class SimpleStateMachine(Node):
         self.get_logger().info(f'   Timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}')
         self.get_logger().info(f'   Frame ID: {msg.header.frame_id}')
         self.get_logger().info(f'   Total detections: {num_detections} (Left: {len(left_detections)}, Right: {len(right_detections)})')
+        self.get_logger().info('')
+        self.get_logger().info(f'🎯 FINAL DECISION: {final_decision}')
         self.get_logger().info('=' * 80)
         
         if num_detections == 0:
@@ -196,6 +211,105 @@ class SimpleStateMachine(Node):
                     self._print_detection_details(detection, idx, 'RIGHT')
         
         self.get_logger().info('=' * 80)
+    
+    def _get_horizontal_position(self, camera_x):
+        """Determine horizontal position based on camera X coordinate
+        
+        Args:
+            camera_x: X coordinate within single camera (0-672)
+            
+        Returns:
+            str: 'LEFT', 'CENTER', or 'RIGHT'
+        """
+        if camera_x < self.detection_width_threshold_min:
+            return 'LEFT'
+        elif camera_x <= self.detection_width_threshold_max:
+            return 'CENTER'
+        else:
+            return 'RIGHT'
+    
+    def _make_decision(self, left_positions, right_positions):
+        """Make final decision based on detections from both cameras
+        
+        Args:
+            left_positions: List of positions from left camera ['LEFT', 'CENTER', 'RIGHT']
+            right_positions: List of positions from right camera ['LEFT', 'CENTER', 'RIGHT']
+            
+        Returns:
+            str: Final decision with emoji
+            
+        Logic:
+            - If both cameras have detections and agree: use that position
+            - If both cameras have detections but disagree: CENTER (default safe choice)
+            - If only one camera has detection: use that detection's position
+            - If no detections: NO OPPONENT DETECTED
+        """
+        has_left = len(left_positions) > 0
+        has_right = len(right_positions) > 0
+        
+        if not has_left and not has_right:
+            return "NO OPPONENT DETECTED ✅"
+        
+        # Only left camera has detection
+        if has_left and not has_right:
+            # Use the most common position from left camera
+            decision = self._most_common(left_positions)
+            return f"{decision} {self._get_position_emoji(decision)} (Left Camera Only)"
+        
+        # Only right camera has detection
+        if has_right and not has_left:
+            # Use the most common position from right camera
+            decision = self._most_common(right_positions)
+            return f"{decision} {self._get_position_emoji(decision)} (Right Camera Only)"
+        
+        # Both cameras have detections
+        left_decision = self._most_common(left_positions)
+        right_decision = self._most_common(right_positions)
+        
+        if left_decision == right_decision:
+            # Both cameras agree
+            return f"{left_decision} {self._get_position_emoji(left_decision)} (Both Cameras Agree ✓)"
+        else:
+            # Cameras disagree - default to CENTER for safety
+            return f"CENTER 🎯 (Cameras Disagree: L={left_decision}, R={right_decision})"
+    
+    def _most_common(self, positions):
+        """Find the most common position in a list
+        
+        Args:
+            positions: List of position strings
+            
+        Returns:
+            str: Most common position
+        """
+        if not positions:
+            return 'CENTER'
+        
+        # Count occurrences
+        counts = {}
+        for pos in positions:
+            counts[pos] = counts.get(pos, 0) + 1
+        
+        # Return most common
+        return max(counts, key=counts.get)
+    
+    def _get_position_emoji(self, position):
+        """Get emoji for position
+        
+        Args:
+            position: Position string ('LEFT', 'CENTER', 'RIGHT')
+            
+        Returns:
+            str: Emoji
+        """
+        if position == 'LEFT':
+            return '⬅️'
+        elif position == 'CENTER':
+            return '🎯'
+        elif position == 'RIGHT':
+            return '➡️'
+        else:
+            return '❓'
     
     def _print_detection_details(self, detection, idx, camera_side):
         """Helper function to print detection details
