@@ -181,6 +181,10 @@ class SimpleStateMachine(Node):
         # Make decision based on detections from both cameras
         final_decision = self._make_decision(left_positions, right_positions)
         
+        # Update raceline based on decision (Mode 3 only)
+        previous_raceline = self.current
+        self._update_raceline_from_decision(final_decision)
+        
         # Print header
         self.get_logger().info('=' * 80)
         self.get_logger().info(f'🚗 OPPONENT DETECTION #{self.detection_count}')
@@ -189,6 +193,7 @@ class SimpleStateMachine(Node):
         self.get_logger().info(f'   Total detections: {num_detections} (Left: {len(left_detections)}, Right: {len(right_detections)})')
         self.get_logger().info('')
         self.get_logger().info(f'🎯 FINAL DECISION: {final_decision}')
+        self.get_logger().info(f'📍 RACELINE: {previous_raceline} → {self.current} {self._get_raceline_change_indicator(previous_raceline, self.current)}')
         self.get_logger().info('=' * 80)
         
         if num_detections == 0:
@@ -211,6 +216,54 @@ class SimpleStateMachine(Node):
                     self._print_detection_details(detection, idx, 'RIGHT')
         
         self.get_logger().info('=' * 80)
+    
+    def _update_raceline_from_decision(self, decision):
+        """Update current raceline based on decision
+        
+        Args:
+            decision: Decision string containing LEFT, CENTER, or RIGHT
+            
+        Logic:
+            - CENTER: Keep current raceline (no change)
+            - RIGHT: Decrease raceline by 1 (shift left, min = 1)
+            - LEFT: Increase raceline by 1 (shift right, max = max_raceline)
+            - NO OPPONENT: Keep current raceline
+        """
+        old_raceline = self.current
+        
+        if "CENTER" in decision or "NO OPPONENT" in decision:
+            # Keep current raceline
+            pass
+        elif "RIGHT" in decision:
+            # Opponent on right → shift to left raceline (decrease)
+            self.current = max(1, self.current - 1)
+        elif "LEFT" in decision:
+            # Opponent on left → shift to right raceline (increase)
+            self.current = min(self.max_raceline, self.current + 1)
+        
+        # Log raceline change if it happened
+        if old_raceline != self.current:
+            self.get_logger().info(
+                f'🔄 Raceline adjusted: {old_raceline} → {self.current} '
+                f'(Decision: {decision.split()[0]})'
+            )
+    
+    def _get_raceline_change_indicator(self, old_raceline, new_raceline):
+        """Get emoji indicator for raceline change
+        
+        Args:
+            old_raceline: Previous raceline ID
+            new_raceline: Current raceline ID
+            
+        Returns:
+            str: Emoji indicator
+        """
+        if new_raceline < old_raceline:
+            return '⬅️ (Shifted Left)'
+        elif new_raceline > old_raceline:
+            return '➡️ (Shifted Right)'
+        else:
+            return '↔️ (No Change)'
     
     def _get_horizontal_position(self, camera_x):
         """Determine horizontal position based on camera X coordinate
