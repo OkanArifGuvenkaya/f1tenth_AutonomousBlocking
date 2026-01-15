@@ -43,6 +43,6 @@ simple_state_machine:
     # If center_x < min: opponent is on LEFT side
     # If min <= center_x <= max: opponent is in CENTER
     # If center_x > max: opponent is on RIGHT side
-    detection_width_threshold_min: 224.0  # pixels (672/3 = left third)
-    detection_width_threshold_max: 448.0  # pixels (672*2/3 = right third)
+    detection_width_threshold_min: 224.0  # pixels (range 0-672)
+    detection_width_threshold_max: 448.0  # pixels (range detection_width_threshold_min-672)
 

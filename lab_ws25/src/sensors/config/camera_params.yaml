@@ -12,12 +12,10 @@ camera_publisher:
     
     # ZED Camera Native Resolution (Update based on actual camera output)
     # NOTE: These values are requested, but actual resolution may differ
-    # Check actual resolution with: ros2 topic echo /camera/image_raw | head -15
-    # ACTUAL OUTPUT: width=1344, height=376 (ZED Mini VGA mode)
+    # Check actual resolution with: ros2 topic echo /camera/image_raw
+    # Used camera for F1Tenth is ZED is stereo in VGA mode. width=672, height=376 per eye at total image is 1344x376
     image_width: 1344                  # Desired/Actual image width
     image_height: 376                  # Desired/Actual image height
 
-    # Camera Detection Settings
-    camera_index_start: 0              # Start searching from this camera index
-    camera_index_end: 4                # End search at this camera index
-    min_camera_width: 1280             # Minimum width to identify ZED camera
+    # Camera Settings
+    camera_index: 0                    # Camera device index (/dev/videoX)

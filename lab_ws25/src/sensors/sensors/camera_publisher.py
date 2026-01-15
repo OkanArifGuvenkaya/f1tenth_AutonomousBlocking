@@ -29,9 +29,7 @@ class CameraPublisher(Node):
         self.declare_parameter('publish_rate')
         self.declare_parameter('image_width')
         self.declare_parameter('image_height')
-        self.declare_parameter('camera_index_start')
-        self.declare_parameter('camera_index_end')
-        self.declare_parameter('min_camera_width')
+        self.declare_parameter('camera_index')
         
         # Get parameters and validate they exist
         try:
@@ -40,9 +38,7 @@ class CameraPublisher(Node):
             publish_rate = self.get_parameter('publish_rate').value
             image_width = self.get_parameter('image_width').value
             image_height = self.get_parameter('image_height').value
-            camera_index_start = self.get_parameter('camera_index_start').value
-            camera_index_end = self.get_parameter('camera_index_end').value
-            min_camera_width = self.get_parameter('min_camera_width').value
+            camera_index = self.get_parameter('camera_index').value
         except Exception as e:
             self.get_logger().error('=' * 60)
             self.get_logger().error('❌ CONFIGURATION ERROR!')
@@ -68,54 +64,33 @@ class CameraPublisher(Node):
             raise ValueError('image_width must be a positive integer')
         if not isinstance(image_height, int) or image_height <= 0:
             raise ValueError('image_height must be a positive integer')
-        if not isinstance(camera_index_start, int) or camera_index_start < 0:
-            raise ValueError('camera_index_start must be a non-negative integer')
-        if not isinstance(camera_index_end, int) or camera_index_end < camera_index_start:
-            raise ValueError('camera_index_end must be >= camera_index_start')
-        if not isinstance(min_camera_width, int) or min_camera_width <= 0:
-            raise ValueError('min_camera_width must be a positive integer')
+        if not isinstance(camera_index, int) or camera_index < 0:
+            raise ValueError('camera_index must be a non-negative integer')
         
         self.get_logger().info('=' * 60)
         self.get_logger().info('F1Tenth ZED Camera Publisher Node')
         self.get_logger().info('=' * 60)
-        self.get_logger().info('Searching for ZED camera...')
+        self.get_logger().info(f'Opening camera at index {camera_index}...')
         
         # CV Bridge for ROS-OpenCV conversion
         self.bridge = CvBridge()
         self.frame_id = frame_id
         
-        # Find and open ZED camera
-        self.cap = None
-        for camera_index in range(camera_index_start, camera_index_end + 1):
-            self.get_logger().info(f'Trying camera index {camera_index}...')
-            test_cap = cv2.VideoCapture(camera_index)
-            if test_cap.isOpened():
-                ret, frame = test_cap.read()
-                if ret:
-                    height, width = frame.shape[:2]
-                    self.get_logger().info(f'  Camera {camera_index}: {width}x{height}')
-                    
-                    # ZED cameras typically have higher resolution
-                    if width >= min_camera_width:
-                        self.get_logger().info(f'✅ Found ZED camera at index {camera_index}')
-                        self.cap = test_cap
-                        break
-                    else:
-                        test_cap.release()
-                else:
-                    test_cap.release()
+        # Open ZED camera with specified index
+        self.cap = cv2.VideoCapture(camera_index)
         
-        if self.cap is None or not self.cap.isOpened():
+        if not self.cap.isOpened():
             self.get_logger().error('=' * 60)
             self.get_logger().error('❌ CAMERA NOT FOUND!')
             self.get_logger().error('=' * 60)
-            self.get_logger().error('Failed to find ZED camera in the specified index range.')
+            self.get_logger().error(f'Failed to open camera at index {camera_index}.')
             self.get_logger().error('Please ensure:')
             self.get_logger().error('  1. ZED camera is connected')
-            self.get_logger().error('  2. Camera index range is correct')
+            self.get_logger().error(f'  2. Camera exists at /dev/video{camera_index}')
             self.get_logger().error('  3. You have camera access permissions')
+            self.get_logger().error('  4. Camera is not being used by another process')
             self.get_logger().error('=' * 60)
-            raise RuntimeError('Camera not found')
+            raise RuntimeError(f'Camera not found at index {camera_index}')
         
         # Set camera resolution
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, image_width)
@@ -124,6 +99,8 @@ class CameraPublisher(Node):
         # Verify actual resolution
         actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        self.get_logger().info(f'✅ Camera opened successfully at index {camera_index}')
         
         # Publisher
         self.publisher = self.create_publisher(Image, camera_topic, 10)
@@ -136,10 +113,12 @@ class CameraPublisher(Node):
         
         self.get_logger().info('-' * 60)
         self.get_logger().info('Configuration:')
+        self.get_logger().info(f'  Camera index: {camera_index}')
         self.get_logger().info(f'  Camera topic: {camera_topic}')
         self.get_logger().info(f'  Frame ID: {frame_id}')
         self.get_logger().info(f'  Publish rate: {publish_rate} Hz')
-        self.get_logger().info(f'  Resolution: {actual_width}x{actual_height}')
+        self.get_logger().info(f'  Requested resolution: {image_width}x{image_height}')
+        self.get_logger().info(f'  Actual resolution: {actual_width}x{actual_height}')
         self.get_logger().info('-' * 60)
         self.get_logger().info('🚀 Camera publisher is ready!')
         self.get_logger().info('=' * 60)

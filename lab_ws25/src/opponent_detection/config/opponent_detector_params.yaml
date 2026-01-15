@@ -17,4 +17,4 @@ opponent_detector:
     publish_visualization: true  # Set to false to save bandwidth
     
     # Logging
-    log_frequency: 1.0  # Log detection info every N seconds
+    log_frequency: 2.0  # Log detection info every N seconds
