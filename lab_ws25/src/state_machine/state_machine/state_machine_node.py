@@ -27,6 +27,8 @@ class SimpleStateMachine(Node):
         self.declare_parameter('opponent_detection_topic', '/opponent_detections')
         self.declare_parameter('detection_print_interval', 2.0)
         self.declare_parameter('detection_height_threshold', 100.0)
+        self.declare_parameter('detection_width_threshold_min', 224.0)
+        self.declare_parameter('detection_width_threshold_max', 448.0)
 
         self.selected_topic = self.get_parameter('selected_topic').get_parameter_value().string_value
         self.max_raceline = int(self.get_parameter('max_raceline').get_parameter_value().integer_value)
@@ -38,6 +40,8 @@ class SimpleStateMachine(Node):
         self.opponent_detection_topic = self.get_parameter('opponent_detection_topic').get_parameter_value().string_value
         self.detection_print_interval = float(self.get_parameter('detection_print_interval').get_parameter_value().double_value)
         self.detection_height_threshold = float(self.get_parameter('detection_height_threshold').get_parameter_value().double_value)
+        self.detection_width_threshold_min = float(self.get_parameter('detection_width_threshold_min').get_parameter_value().double_value)
+        self.detection_width_threshold_max = float(self.get_parameter('detection_width_threshold_max').get_parameter_value().double_value)
 
         self.pub = self.create_publisher(Int32, self.selected_topic, 10)
         
@@ -105,6 +109,11 @@ class SimpleStateMachine(Node):
             self.get_logger().info(
                 f'Distance estimation threshold: {self.detection_height_threshold} pixels '
                 f'(height > {self.detection_height_threshold}px = CLOSE, <= {self.detection_height_threshold}px = FAR)'
+            )
+            self.get_logger().info(
+                f'Horizontal position thresholds: LEFT < {self.detection_width_threshold_min}px, '
+                f'CENTER {self.detection_width_threshold_min}-{self.detection_width_threshold_max}px, '
+                f'RIGHT > {self.detection_width_threshold_max}px'
             )
 
     def switch_raceline_cb(self):
@@ -233,11 +242,23 @@ class SimpleStateMachine(Node):
             distance_estimate = "FAR 🟢"
             distance_indicator = "ℹ️  "
         
+        # Determine horizontal position (LEFT/CENTER/RIGHT) within the camera
+        if camera_x < self.detection_width_threshold_min:
+            horizontal_position = "LEFT ⬅️"
+            position_indicator = "◀️ "
+        elif camera_x <= self.detection_width_threshold_max:
+            horizontal_position = "CENTER ⬆️"
+            position_indicator = "🎯 "
+        else:
+            horizontal_position = "RIGHT ➡️"
+            position_indicator = "▶️ "
+        
         self.get_logger().info(f'   Detection {idx}:')
         self.get_logger().info(f'      Class: {class_id}')
         self.get_logger().info(f'      Confidence: {confidence:.2%}')
         self.get_logger().info(f'      Camera: {camera_side}')
         self.get_logger().info(f'      {distance_indicator}Distance Estimate: {distance_estimate}')
+        self.get_logger().info(f'      {position_indicator}Horizontal Position: {horizontal_position}')
         self.get_logger().info(f'      Bounding Box:')
         self.get_logger().info(f'         Center (Stereo): ({center_x:.1f}, {center_y:.1f}) pixels')
         self.get_logger().info(f'         Center (Single Camera): ({camera_x:.1f}, {center_y:.1f}) pixels')
