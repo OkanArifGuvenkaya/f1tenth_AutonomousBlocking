@@ -9,6 +9,7 @@ from typing import Optional
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int32, String
+from vision_msgs.msg import Detection2DArray
 
 
 class SimpleStateMachine(Node):
@@ -20,9 +21,10 @@ class SimpleStateMachine(Node):
         self.declare_parameter('max_raceline', 3)
         self.declare_parameter('switch_period_sec', 5.0)
         self.declare_parameter('publish_period_sec', 0.2)
-        self.declare_parameter('raceline_mode', 1)  # 0=fixed, 1=cycling, 2=keyboard
+        self.declare_parameter('raceline_mode', 1)  # 0=fixed, 1=cycling, 2=keyboard, 3=opponent_detection
         self.declare_parameter('fixed_raceline_id', 2)
         self.declare_parameter('keyboard_topic', '/keyboard_input')
+        self.declare_parameter('opponent_detection_topic', '/opponent_detections')
 
         self.selected_topic = self.get_parameter('selected_topic').get_parameter_value().string_value
         self.max_raceline = int(self.get_parameter('max_raceline').get_parameter_value().integer_value)
@@ -31,6 +33,7 @@ class SimpleStateMachine(Node):
         self.raceline_mode = int(self.get_parameter('raceline_mode').get_parameter_value().integer_value)
         self.fixed_raceline_id = int(self.get_parameter('fixed_raceline_id').get_parameter_value().integer_value)
         self.keyboard_topic = self.get_parameter('keyboard_topic').get_parameter_value().string_value
+        self.opponent_detection_topic = self.get_parameter('opponent_detection_topic').get_parameter_value().string_value
 
         self.pub = self.create_publisher(Int32, self.selected_topic, 10)
         
@@ -39,6 +42,13 @@ class SimpleStateMachine(Node):
             self.keyboard_sub = self.create_subscription(
                 String, self.keyboard_topic, self.keyboard_callback, 10
             )
+        
+        # Opponent detection subscriber (for mode 3)
+        if self.raceline_mode == 3:
+            self.opponent_sub = self.create_subscription(
+                Detection2DArray, self.opponent_detection_topic, self.opponent_detection_callback, 10
+            )
+            self.detection_count = 0  # Counter for received detections
 
         # Set initial raceline based on mode
         if self.raceline_mode == 0:
@@ -68,6 +78,11 @@ class SimpleStateMachine(Node):
                 f'SimpleStateMachine [KEYBOARD MODE]: Use arrow keys to control, '
                 f'listening on {self.keyboard_topic}, publishing to {self.selected_topic} every {self.publish_period}s (1..{self.max_raceline})'
             )
+        elif self.raceline_mode == 3:
+            self.get_logger().info(
+                f'SimpleStateMachine [OPPONENT DETECTION MODE]: Monitoring opponent detections, '
+                f'listening on {self.opponent_detection_topic}, publishing to {self.selected_topic} every {self.publish_period}s'
+            )
 
     def switch_raceline_cb(self):
         """Switch to next raceline every switch_period seconds (only in cycling mode)"""
@@ -84,6 +99,60 @@ class SimpleStateMachine(Node):
             self.change_raceline(-1)
         elif msg.data == 'right':
             self.change_raceline(1)
+    
+    def opponent_detection_callback(self, msg):
+        """Handle opponent detection messages and print details"""
+        if self.raceline_mode != 3:
+            return
+        
+        self.detection_count += 1
+        num_detections = len(msg.detections)
+        
+        # Print header
+        self.get_logger().info('=' * 80)
+        self.get_logger().info(f'🚗 OPPONENT DETECTION #{self.detection_count}')
+        self.get_logger().info(f'   Timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}')
+        self.get_logger().info(f'   Frame ID: {msg.header.frame_id}')
+        self.get_logger().info(f'   Number of detections: {num_detections}')
+        self.get_logger().info('-' * 80)
+        
+        if num_detections == 0:
+            self.get_logger().info('   ℹ️  No opponent cars detected')
+        else:
+            # Print details for each detection
+            for idx, detection in enumerate(msg.detections, 1):
+                bbox = detection.bbox
+                center_x = bbox.center.x
+                center_y = bbox.center.y
+                width = bbox.size_x
+                height = bbox.size_y
+                
+                # Get confidence score if available
+                confidence = 0.0
+                class_id = "unknown"
+                if detection.results and len(detection.results) > 0:
+                    confidence = detection.results[0].score
+                    class_id = detection.results[0].id
+                
+                self.get_logger().info(f'   Detection {idx}:')
+                self.get_logger().info(f'      Class: {class_id}')
+                self.get_logger().info(f'      Confidence: {confidence:.2%}')
+                self.get_logger().info(f'      Bounding Box:')
+                self.get_logger().info(f'         Center: ({center_x:.1f}, {center_y:.1f}) pixels')
+                self.get_logger().info(f'         Size: {width:.1f} x {height:.1f} pixels')
+                self.get_logger().info(f'         Area: {width * height:.0f} pixels²')
+                
+                # Calculate bounding box corners
+                x1 = center_x - width / 2
+                y1 = center_y - height / 2
+                x2 = center_x + width / 2
+                y2 = center_y + height / 2
+                self.get_logger().info(f'         Corners: ({x1:.1f}, {y1:.1f}) to ({x2:.1f}, {y2:.1f})')
+                
+                if idx < num_detections:
+                    self.get_logger().info('      ---')
+        
+        self.get_logger().info('=' * 80)
     
     def change_raceline(self, direction):
         """Change raceline with bounds checking

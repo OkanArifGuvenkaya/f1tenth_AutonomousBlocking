@@ -9,10 +9,14 @@ simple_state_machine:
     # 0 = Fixed mode: Use only fixed_raceline_id (no switching)
     # 1 = Cycling mode: Switch between racelines every switch_period_sec
     # 2 = Keyboard mode: Control with arrow keys (LEFT/RIGHT)
-    raceline_mode: 2
+    # 3 = Opponent detection mode: Subscribe to opponent detections and print details
+    raceline_mode: 3
     
     # Fixed raceline ID (used when raceline_mode = 0)
     fixed_raceline_id: 2
     
     # Keyboard input topic (used when raceline_mode = 2)
     keyboard_topic: "/keyboard_input"
+    
+    # Opponent detection topic (used when raceline_mode = 3)
+    opponent_detection_topic: "/opponent_detections"
