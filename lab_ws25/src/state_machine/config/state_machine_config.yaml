@@ -10,6 +10,8 @@ simple_state_machine:
     # 1 = Cycling mode: Switch between racelines every switch_period_sec
     # 2 = Keyboard mode: Control with arrow keys (LEFT/RIGHT)
     # 3 = Opponent detection mode: Subscribe to opponent detections and print details
+    #     ZED Stereo Camera: 1344x376 pixels (Left: 0-672, Right: 672-1344)
+    #     Detections are classified by camera based on bbox center X position
     raceline_mode: 3
     
     # Fixed raceline ID (used when raceline_mode = 0)
@@ -20,3 +22,7 @@ simple_state_machine:
     
     # Opponent detection topic (used when raceline_mode = 3)
     opponent_detection_topic: "/opponent_detections"
+    
+    # Detection print interval in seconds (used when raceline_mode = 3)
+    # Throttles printing to avoid console spam - only prints every N seconds
+    detection_print_interval: 2.0
