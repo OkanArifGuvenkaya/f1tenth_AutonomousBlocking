@@ -11,4 +11,5 @@ ros2 launch opponent_detection opponent_detector.launch.py
 
 
 python3 scripts/fake_odom_publisher.py
+python3 scripts/view_detections.py
 ros2 run state_machine keyboard_listener

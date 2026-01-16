@@ -17,7 +17,7 @@ simple_state_machine:
     #       - Decision RIGHT: Shift to left raceline (decrease by 1, min=1)
     #       - Decision LEFT: Shift to right raceline (increase by 1, max=3)
     #     Initial raceline: 2 (middle)
-    raceline_mode: 2
+    raceline_mode: 3
     
     # Fixed raceline ID (used when raceline_mode = 0)
     fixed_raceline_id: 2
