@@ -13,3 +13,22 @@ ros2 launch opponent_detection opponent_detector.launch.py
 python3 scripts/fake_odom_publisher.py
 python3 scripts/view_detections.py
 ros2 run state_machine keyboard_listener
+
+
+RACELINE_MODE is in state machine config
+
+FOR RACELINE MODE 2
+
+ros2 launch state_machine state_machine.launch.py
+ros2 launch pure_pursuit pure_pursuit_launch.py
+ros2 launch particle_filter localize_launch.py
+ros2 run state_machine keyboard_listener
+
+
+FOR RACELINE MODE 3
+
+ros2 launch state_machine state_machine.launch.py
+ros2 launch pure_pursuit pure_pursuit_launch.py
+ros2 launch particle_filter localize_launch.py
+ros2 launch sensors camera.launch.py
+ros2 launch opponent_detection opponent_detector.launch.py

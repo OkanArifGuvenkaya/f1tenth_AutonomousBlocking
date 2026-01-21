@@ -20,14 +20,14 @@ class SimpleStateMachine(Node):
         self.declare_parameter('selected_topic', '/selected_raceline')
         self.declare_parameter('max_raceline', 3)
         self.declare_parameter('switch_period_sec', 5.0)
-        self.declare_parameter('publish_period_sec', 0.2)
+        self.declare_parameter('publish_period_sec', 0.033)
         self.declare_parameter('raceline_mode', 1)  # 0=fixed, 1=cycling, 2=keyboard, 3=opponent_detection
         self.declare_parameter('fixed_raceline_id', 2)
         self.declare_parameter('keyboard_topic', '/keyboard_input')
         self.declare_parameter('opponent_detection_topic', '/opponent_detections')
         self.declare_parameter('detection_print_interval', 2.0)
         self.declare_parameter('raceline_change_frame_threshold', 10)
-        self.declare_parameter('detection_height_threshold', 100.0)
+        self.declare_parameter('detection_height_threshold', 50.0)
         self.declare_parameter('detection_width_threshold_min', 224.0)
         self.declare_parameter('detection_width_threshold_max', 448.0)
 
@@ -74,11 +74,12 @@ class SimpleStateMachine(Node):
             self.last_print_time = self.get_clock().now()
             self.latest_detection_msg = None
 
+        self.current = self.fixed_raceline_id
         # Set initial raceline based on mode
-        if self.raceline_mode == 0:
-            self.current = self.fixed_raceline_id
-        else:
-            self.current = 1
+        #if self.raceline_mode == 0:
+        #    self.current = self.fixed_raceline_id
+        #else:
+        #    self.current = 1
         
         # Timer to switch raceline every switch_period seconds (only in cycling mode)
         if self.raceline_mode == 1:
@@ -366,6 +367,7 @@ class SimpleStateMachine(Node):
         has_right = len(right_positions) > 0
         
         if not has_left and not has_right:
+            self.current = 2
             return "NO OPPONENT DETECTED ✅"
         
         # Only left camera has detection
@@ -440,8 +442,11 @@ class SimpleStateMachine(Node):
         bbox = detection.bbox
         center_x = bbox.center.x
         center_y = bbox.center.y
-        width = bbox.size_x
-        height = bbox.size_y
+        #width = bbox.size_x
+        #height = bbox.size_y
+
+        width = bbox.size_y
+        height = bbox.size_x
         
         # Calculate normalized position within the specific camera (0-672 pixels)
         if camera_side == 'LEFT':
