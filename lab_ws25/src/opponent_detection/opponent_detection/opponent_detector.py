@@ -126,7 +126,7 @@ class OpponentYOLODetector(Node):
             Image,
             camera_topic,
             self.image_callback,
-            10
+            30
         )
         
         # Publishers
@@ -134,7 +134,7 @@ class OpponentYOLODetector(Node):
         self.detection_pub = self.create_publisher(
             Detection2DArray,
             detection_topic,
-            10
+            30
         )
         
         # 2. Visualization image (optional)

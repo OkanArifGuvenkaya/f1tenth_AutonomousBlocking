@@ -3,7 +3,7 @@ simple_state_machine:
     selected_topic: "/selected_raceline"
     max_raceline: 3
     switch_period_sec: 5.0
-    publish_period_sec: 0.2
+    publish_period_sec: 0.033
     
     # Raceline Mode:
     # 0 = Fixed mode: Use only fixed_raceline_id (no switching)
@@ -30,20 +30,20 @@ simple_state_machine:
     
     # Detection print interval in seconds (used when raceline_mode = 3)
     # Throttles printing to avoid console spam - only prints every N seconds
-    detection_print_interval: 2.0
+    detection_print_interval: 0.5
     
     # Raceline change frame threshold (used when raceline_mode = 3)
     # Requires N consecutive frames with same decision before changing raceline
     # Helps filter out noise and unstable detections during overtaking
     # Higher value = more stable but slower response
     # Lower value = faster response but more susceptible to noise
-    raceline_change_frame_threshold: 3  # frames (e.g., 10 frames = ~0.3s at 30fps)
+    raceline_change_frame_threshold: 1  # frames (e.g., 10 frames = ~0.3s at 30fps)
     
     # Detection height threshold for distance estimation (used when raceline_mode = 3)
     # If bbox height > threshold: opponent is CLOSE
     # If bbox height <= threshold: opponent is FAR
     # Larger bbox height means the car appears bigger in image = closer to camera
-    detection_height_threshold: 100.0  # pixels
+    detection_height_threshold: 50.0  # pixels
     
     # Detection horizontal position thresholds (used when raceline_mode = 3)
     # Based on single camera width (672 pixels per camera)
